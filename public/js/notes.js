@@ -1,9 +1,17 @@
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
 function noteCard(note) {
   return `
     <article class="note-card">
-      <h3>${note.title}</h3>
-      <p class="note-meta">Owner: ${note.ownerUsername} | ID: ${note.id} | Pinned: ${note.pinned}</p>
-      <div class="note-body">${note.body}</div>
+      <h3>${escapeHtml(note.title)}</h3>
+      <p class="note-meta">Owner: ${escapeHtml(note.ownerUsername)} | ID: ${escapeHtml(note.id)} | Pinned: ${escapeHtml(note.pinned)}</p>
+      <div class="note-body">${escapeHtml(note.body)}</div>
     </article>
   `;
 }
@@ -56,7 +64,8 @@ document.getElementById("create-note-form").addEventListener("submit", async (ev
     ownerId: formData.get("ownerId"),
     title: formData.get("title"),
     body: formData.get("body"),
-    pinned: formData.get("pinned") === "on"
+    pinned: formData.get("pinned") === "on",
+    csrfToken: localStorage.getItem("csrfToken")
   };
 
   await api("/api/notes", {
