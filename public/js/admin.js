@@ -1,3 +1,12 @@
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 (async function bootstrapAdmin() {
   try {
     const user = await loadCurrentUser();
@@ -19,11 +28,11 @@
       .map(
         (entry) => `
           <tr>
-            <td>${entry.id}</td>
-            <td>${entry.username}</td>
-            <td>${entry.role}</td>
-            <td>${entry.displayName}</td>
-            <td>${entry.noteCount}</td>
+            <td>${escapeHtml(entry.id)}</td>
+            <td>${escapeHtml(entry.username)}</td>
+            <td>${escapeHtml(entry.role)}</td>
+            <td>${escapeHtml(entry.displayName)}</td>
+            <td>${escapeHtml(entry.noteCount)}</td>
           </tr>
         `
       )
