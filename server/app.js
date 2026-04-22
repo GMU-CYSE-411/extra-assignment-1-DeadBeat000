@@ -88,12 +88,14 @@ async function createApp() {
     const username = String(request.body.username || "");
     const password = String(request.body.password || "");
 
-    const query = `
-      SELECT id, username, role, display_name
-      FROM users
-      WHERE username = '${username}' AND password = '${password}'
-    `;
-    const user = await db.get(query);
+    const user = await db.get(
+      `
+        SELECT id, username, role, display_name
+        FROM users
+        WHERE username = ? AND password = ?
+      `,
+      [username, password]
+    );
 
     if (!user) {
       response.status(401).json({ error: "Invalid username or password." });
@@ -109,7 +111,10 @@ async function createApp() {
     );
 
     response.cookie("sid", sessionId, {
-      path: "/"
+      path: "/",
+      httpOnly: true,
+      sameSite: "strict",
+      secure: false
     });
 
     response.json({
@@ -133,30 +138,33 @@ async function createApp() {
   });
 
   app.get("/api/notes", requireAuth, async (request, response) => {
-    const ownerId = request.query.ownerId || request.currentUser.id;
+    const ownerId = request.currentUser.id;
     const search = request.query.search || "";
 
-    const notes = await db.all(`
-      SELECT
-        notes.id,
-        notes.owner_id AS ownerId,
-        users.username AS ownerUsername,
-        notes.title,
-        notes.body,
-        notes.pinned,
-        notes.created_at AS createdAt
-      FROM notes
-      JOIN users ON users.id = notes.owner_id
-      WHERE notes.owner_id = ${ownerId}
-        AND (notes.title LIKE '%${search}%' OR notes.body LIKE '%${search}%')
-      ORDER BY notes.pinned DESC, notes.id DESC
-    `);
+    const notes = await db.all(
+      `
+        SELECT
+          notes.id,
+          notes.owner_id AS ownerId,
+          users.username AS ownerUsername,
+          notes.title,
+          notes.body,
+          notes.pinned,
+          notes.created_at AS createdAt
+        FROM notes
+        JOIN users ON users.id = notes.owner_id
+        WHERE notes.owner_id = ?
+          AND (notes.title LIKE ? OR notes.body LIKE ?)
+        ORDER BY notes.pinned DESC, notes.id DESC
+      `,
+      [ownerId, `%${search}%`, `%${search}%`]
+    );
 
     response.json({ notes });
   });
 
   app.post("/api/notes", requireAuth, async (request, response) => {
-    const ownerId = Number(request.body.ownerId || request.currentUser.id);
+    const ownerId = request.currentUser.id;
     const title = String(request.body.title || "");
     const body = String(request.body.body || "");
     const pinned = request.body.pinned ? 1 : 0;
@@ -173,7 +181,7 @@ async function createApp() {
   });
 
   app.get("/api/settings", requireAuth, async (request, response) => {
-    const userId = Number(request.query.userId || request.currentUser.id);
+    const ownerId = request.currentUser.id;
 
     const settings = await db.get(
       `
@@ -189,14 +197,14 @@ async function createApp() {
         JOIN users ON users.id = settings.user_id
         WHERE settings.user_id = ?
       `,
-      [userId]
+      [ownerId]
     );
 
     response.json({ settings });
   });
 
   app.post("/api/settings", requireAuth, async (request, response) => {
-    const userId = Number(request.body.userId || request.currentUser.id);
+    const userId = request.currentUser.id;
     const displayName = String(request.body.displayName || "");
     const statusMessage = String(request.body.statusMessage || "");
     const theme = String(request.body.theme || "classic");
@@ -226,7 +234,11 @@ async function createApp() {
     });
   });
 
-  app.get("/api/admin/users", requireAuth, async (_request, response) => {
+app.get("/api/admin/users", requireAuth, async (request, response) => {
+
+  if (request.currentUser.role !== "admin") {
+    return response.status(403).json({ error: "Admin access required." });
+  }
     const users = await db.all(`
       SELECT
         users.id,
