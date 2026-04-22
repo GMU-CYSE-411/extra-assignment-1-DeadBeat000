@@ -1,3 +1,12 @@
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 async function loadSettings(userId) {
   const result = await api(`/api/settings?userId=${encodeURIComponent(userId)}`);
   const settings = result.settings;
@@ -10,9 +19,10 @@ async function loadSettings(userId) {
   form.elements.theme.value = settings.theme;
   form.elements.statusMessage.value = settings.statusMessage;
   form.elements.emailOptIn.checked = Boolean(settings.emailOptIn);
+
   document.getElementById("status-preview").innerHTML = `
-    <p><strong>${settings.displayName}</strong></p>
-    <p>${settings.statusMessage}</p>
+    <p><strong>${escapeHtml(settings.displayName)}</strong></p>
+    <p>${escapeHtml(settings.statusMessage)}</p>
   `;
 
   writeJson("settings-output", settings);
@@ -48,7 +58,8 @@ document.getElementById("settings-form").addEventListener("submit", async (event
     displayName: formData.get("displayName"),
     theme: formData.get("theme"),
     statusMessage: formData.get("statusMessage"),
-    emailOptIn: formData.get("emailOptIn") === "on"
+    emailOptIn: formData.get("emailOptIn") === "on",
+    csrfToken: localStorage.getItem("csrfToken")
   };
 
   const result = await api("/api/settings", {
@@ -61,11 +72,25 @@ document.getElementById("settings-form").addEventListener("submit", async (event
 });
 
 document.getElementById("enable-email").addEventListener("click", async () => {
-  const result = await api("/api/settings/toggle-email?enabled=1");
+  const result = await api("/api/settings/toggle-email", {
+    method: "POST",
+    body: JSON.stringify({
+      enabled: true,
+      csrfToken: localStorage.getItem("csrfToken")
+    })
+  });
+
   writeJson("settings-output", result);
 });
 
 document.getElementById("disable-email").addEventListener("click", async () => {
-  const result = await api("/api/settings/toggle-email?enabled=0");
+  const result = await api("/api/settings/toggle-email", {
+    method: "POST",
+    body: JSON.stringify({
+      enabled: false,
+      csrfToken: localStorage.getItem("csrfToken")
+    })
+  });
+
   writeJson("settings-output", result);
 });
