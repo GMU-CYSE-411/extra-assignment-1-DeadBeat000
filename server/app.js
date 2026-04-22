@@ -12,6 +12,10 @@ function createSessionId() {
   return `SESSION-${Math.random().toString(36).slice(2, 10)}-${Date.now()}`;
 }
 
+function createCsrfToken() {
+  return Math.random().toString(36).slice(2) + Date.now();
+}
+
 async function createApp() {
   if (!fs.existsSync(DEFAULT_DB_FILE)) {
     throw new Error(
@@ -41,6 +45,7 @@ async function createApp() {
       `
         SELECT
           sessions.id AS session_id,
+          sessions.csrf_token AS csrf_token,
           users.id AS id,
           users.username AS username,
           users.role AS role,
@@ -58,7 +63,8 @@ async function createApp() {
           id: row.id,
           username: row.username,
           role: row.role,
-          displayName: row.display_name
+          displayName: row.display_name,
+          csrfToken: row.csrf_token
         }
       : null;
 
@@ -71,6 +77,26 @@ async function createApp() {
       return;
     }
 
+    next();
+  }
+
+  function requireCsrf(request, response, next) {
+    const token =
+      request.body.csrfToken ||
+      request.get("x-csrf-token");
+  
+    if (!request.currentUser) {
+      return response.status(403).json({
+        error: "Authentication required."
+      });
+    }
+  
+    if (!token || token !== request.currentUser.csrfToken) {
+      return response.status(403).json({
+        error: "Invalid CSRF token."
+      });
+    }
+  
     next();
   }
 
@@ -87,6 +113,8 @@ async function createApp() {
   app.post("/api/login", async (request, response) => {
     const username = String(request.body.username || "");
     const password = String(request.body.password || "");
+    const sessionId = request.cookies.sid || createSessionId();
+    const csrfToken = createCsrfToken();
 
     const user = await db.get(
       `
@@ -102,12 +130,11 @@ async function createApp() {
       return;
     }
 
-    const sessionId = request.cookies.sid || createSessionId();
 
     await db.run("DELETE FROM sessions WHERE id = ?", [sessionId]);
     await db.run(
-      "INSERT INTO sessions (id, user_id, created_at) VALUES (?, ?, ?)",
-      [sessionId, user.id, new Date().toISOString()]
+      "INSERT INTO sessions (id, user_id, csrf_token, created_at) VALUES (?, ?, ?, ?)",
+      [sessionId, user.id, csrfToken, new Date().toISOString()]
     );
 
     response.cookie("sid", sessionId, {
@@ -119,6 +146,7 @@ async function createApp() {
 
     response.json({
       ok: true,
+      csrfToken,
       user: {
         id: user.id,
         username: user.username,
@@ -128,7 +156,7 @@ async function createApp() {
     });
   });
 
-  app.post("/api/logout", async (request, response) => {
+  app.post("/api/logout", requireAuth, requireCsrf, async (request, response) => {
     if (request.cookies.sid) {
       await db.run("DELETE FROM sessions WHERE id = ?", [request.cookies.sid]);
     }
@@ -163,7 +191,7 @@ async function createApp() {
     response.json({ notes });
   });
 
-  app.post("/api/notes", requireAuth, async (request, response) => {
+  app.post("/api/notes", requireAuth, requireCsrf, async (request, response) => {
     const ownerId = request.currentUser.id;
     const title = String(request.body.title || "");
     const body = String(request.body.body || "");
@@ -203,7 +231,7 @@ async function createApp() {
     response.json({ settings });
   });
 
-  app.post("/api/settings", requireAuth, async (request, response) => {
+  app.post("/api/settings", requireAuth, requireCsrf, async (request, response) => {
     const userId = request.currentUser.id;
     const displayName = String(request.body.displayName || "");
     const statusMessage = String(request.body.statusMessage || "");
@@ -219,8 +247,8 @@ async function createApp() {
     response.json({ ok: true });
   });
 
-  app.get("/api/settings/toggle-email", requireAuth, async (request, response) => {
-    const enabled = request.query.enabled === "1" ? 1 : 0;
+  app.post("/api/settings/toggle-email", requireAuth, requireCsrf, async (request, response) => {
+    const enabled = request.body.enabled ? 1 : 0;
 
     await db.run("UPDATE settings SET email_opt_in = ? WHERE user_id = ?", [
       enabled,
